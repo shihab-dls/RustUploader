@@ -1,0 +1,13 @@
+[package]
+name = "formulatrix_uploader"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+envy = "0.4"
+dotenvy = "0.15"
+anyhow = "1.0"
+serde_json = "1.0"
+glob = "0.3.1"
+log = "0.4"
