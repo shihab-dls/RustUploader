@@ -15,8 +15,11 @@ fn main() {
     let config_paths: ConfigPaths = envy::from_env::<ConfigPaths>()
     .expect("Failed to load configuration data from .env file");
 
-    let worker_ef = setup_worker(&config_paths.config_file_ef).expect("Could not setup EF worker");
-    let worker_z = setup_worker(&config_paths.config_file_z).expect("Could not setup Z worker");
+    let worker_ef: Box<dyn WorkerShared> = setup_worker(&config_paths.config_file_ef).expect("Could not setup EF worker");
+    let worker_z: Box<dyn WorkerShared> = setup_worker(&config_paths.config_file_z).expect("Could not setup Z worker");
+
+    worker_z.process_job();
+
 }
 
 fn setup_worker(config_path: &String) -> Result<Box<dyn WorkerShared>, Error> {

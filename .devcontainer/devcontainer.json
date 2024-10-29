@@ -1,0 +1,25 @@
+{
+	"name": "Rust",
+	"image": "docker.io/library/rust:1.81.0-bullseye",
+	"workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,z",
+	"workspaceFolder": "/workspace",
+	"mounts": [
+		"source=/scratch/fileworker/FormSync/EF/,target=/workspace/EF,type=bind,z",
+		"source=/scratch/fileworker/FormSync/archive/,target=/workspace/Z,type=bind,z"
+	],
+	"customizations": {
+		"vscode": {
+		  "extensions": [
+			"rust-lang.rust-analyzer",
+			"tamasfe.even-better-toml",
+			"tsandall.opa",
+			"ms-kubernetes-tools.vscode-kubernetes-tools",
+			"cweijan.vscode-database-client2"
+		  ],
+		  "settings": {
+			"rust-analyzer.cargo.features": "all",
+			"rust-analyzer.check.command": "clippy"
+		  }
+		}
+	  }
+}
