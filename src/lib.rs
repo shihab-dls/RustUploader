@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use diesel::QueryableByName;
 
 /// The paths to cofiguration files
 #[derive(Deserialize, Debug)]
@@ -57,4 +58,58 @@ pub struct Config {
     #[serde(default)]
     pub types: PlateTypes,
     pub logging: Logging,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct Credentials {
+    pub database: String,
+    pub username: String,
+    pub password: String,
+    pub host: String,
+    pub port: u32,
+}
+
+#[derive(QueryableByName, Debug)]
+pub struct ContainerInfo {
+    #[sql_type = "diesel::sql_types::Integer"] // Change to the appropriate SQL type
+    pub container_id: i32,
+    
+    #[sql_type = "diesel::sql_types::Integer"] // Change to the appropriate SQL type
+    pub session_id: i32,
+    
+    #[sql_type = "diesel::sql_types::Integer"] // Change to the appropriate SQL type
+    pub dewar_id: i32,
+    
+    #[sql_type = "diesel::sql_types::Text"] // Change to the appropriate SQL type
+    pub name: String,
+    
+    #[sql_type = "diesel::sql_types::Text"] // Change to the appropriate SQL type
+    pub barcode: String,
+    
+    #[sql_type = "diesel::sql_types::Text"] // Change to the appropriate SQL type
+    pub status: String,
+    
+    #[sql_type = "diesel::sql_types::Text"] // Change to the appropriate SQL type
+    pub container_type: String,
+    
+    #[sql_type = "diesel::sql_types::Integer"] // Change to the appropriate SQL type
+    pub capacity: i32,
+    
+    #[sql_type = "diesel::sql_types::Text"] // Change to the appropriate SQL type
+    pub location: String,
+    
+    #[sql_type = "diesel::sql_types::Text"] // Change to the appropriate SQL type
+    pub  beamline: String,
+    
+    #[sql_type = "diesel::sql_types::Text"] // Change to the appropriate SQL type
+    pub comments: String,
+    
+    #[sql_type = "diesel::sql_types::Text"] // Change to the appropriate SQL type
+    pub experiment_type: String,
+    
+    #[sql_type = "diesel::sql_types::Text"] // Change to the appropriate SQL type
+    pub visit: String,
+    
+    #[sql_type = "diesel::sql_types::Text"] // Change to the appropriate SQL type
+    pub year: String,
 }
