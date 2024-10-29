@@ -26,7 +26,12 @@ impl ZWorker {
     pub fn get_container_dict(&self, date_dirs:Vec<PathBuf>) -> Result<HashMap<String, String>, Error>{
         let mut containers: HashMap<String, String> = HashMap::new();
         for entry in date_dirs{
-            let barcodes: glob::Paths = glob(&format!("{}/{}", &entry.into_os_string().into_string().expect("Cannot convert PathBuf to String"), "*/"))?;
+            let barcodes: glob::Paths = glob(
+                &format!("{}/{}", &entry
+                .into_os_string()
+                .into_string()
+                .expect("Cannot convert PathBuf to String"), "*/")
+            )?;
 
             let barcode_dir: Vec<PathBuf> = barcodes.filter_map(|entry: std::result::Result<PathBuf, glob::GlobError>| {
                 match entry {
@@ -37,7 +42,19 @@ impl ZWorker {
             .collect();
 
             for entry in barcode_dir{
-                containers.insert(entry.file_name().expect("Could not parse filename from barcode path").to_string_lossy().into_owned(), entry.parent().expect("Could not parse parent from barcode path").file_name().expect("Could not parse filename from barcode parent path").to_string_lossy().into_owned());
+                containers.insert(
+                    entry
+                    .file_name()
+                    .expect("Could not parse filename from barcode path")
+                    .to_string_lossy()
+                    .into_owned(), 
+                    entry
+                    .parent().
+                    expect("Could not parse parent from barcode path")
+                    .file_name()
+                    .expect("Could not parse filename from barcode parent path")
+                    .to_string_lossy()
+                    .into_owned());
             }
         }
         Ok(containers)
