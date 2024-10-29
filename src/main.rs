@@ -1,7 +1,8 @@
 mod fileworker;
 
 use crate::fileworker::{EFWorker, ZWorker, WorkerShared};
-use formulatrix_uploader::{ConfigPaths, Config, Credentials, ContainerInfo};
+use formulatrix_uploader::{ConfigPaths, Config, Credentials, ContainerInfo, Test};
+use prelude::Queryable;
 use serde_json;
 use anyhow::{Context, Result, Error};
 use std::{fmt::format, fs::File};
@@ -13,6 +14,8 @@ use serde::de::DeserializeOwned;
 use diesel::mysql::MysqlConnection;
 use diesel::prelude::*;
 use diesel::sql_query;
+use mysql::*;
+use mysql::prelude::*;
 
 fn main() {
     dotenvy::dotenv().ok();
@@ -24,13 +27,15 @@ fn main() {
 
     let database_url: String = parse_ispyb_url(&config_paths.credentials_path).expect("Failed to parse ISPyB URL");
 
-    let mut connection: MysqlConnection = establish_connection(&database_url);
+    let pool = Pool::new(database_url.as_str()).expect("Failed to establish connection pool");
 
-    let result = sql_query("CALL retrieve_container_for_barcode('VMXi-AB7191');")
-        .get_result::<ContainerInfo>(&mut connection)
-        .expect("Query failed");
+    let mut conn = pool.get_conn().expect("Failed to establish connection to database");
 
-    println!("{:?}", result);
+    let selected = conn.query_map("SELECT containerId from Container",|(containerId)| Test {containerId}).expect("Query failed.");
+
+    let selected = conn.query_map("CALL retrieve_container_for_barcode('VMXiSim-001');",|(container_id, session_id, dewar_id, name, barcode, status, container_type, capacity, location, beamline, comments, experiment_type, visit, year)| ContainerInfo {container_id, session_id, dewar_id, name, barcode, status, container_type, capacity, location, beamline, comments, experiment_type, visit, year},).expect("Query failed.");
+
+    println!("{:?}", selected);
 
     worker_z.process_job();
 
@@ -102,7 +107,7 @@ fn load_creds_from_json(file_path: &String) -> Result<Credentials> {
 fn parse_ispyb_url(file_path: &String) -> Result<String,Error>{
     let database_creds:Credentials = load_creds_from_json(&file_path)?;
 
-    let database_url: String = format!("mysql://{}:{}@{}:{}/{}", database_creds.username, database_creds.password, database_creds.host, database_creds.port, database_creds.database);
+    let database_url: String = format!("mysql://{}:{}@{}:{}/{}?pool_min=1&pool_max=1", database_creds.username, database_creds.password, database_creds.host, database_creds.port, database_creds.database);
 
     Ok(database_url)
 }

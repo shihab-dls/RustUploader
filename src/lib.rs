@@ -113,3 +113,8 @@ pub struct ContainerInfo {
     #[sql_type = "diesel::sql_types::Text"] // Change to the appropriate SQL type
     pub year: String,
 }
+
+#[derive(Debug)]
+pub struct Test {
+    pub containerId: i32,
+}
