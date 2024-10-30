@@ -11,6 +11,11 @@ use mysql::prelude::*;
 use anyhow::anyhow;
 use std::path::Path;
 use std::result::Result::Ok as OtherOk;
+use std::fs;
+use std::process::Command;
+use image::imageops;
+
+
 pub trait WorkerShared {
     fn process_job(&self, pool: &Pool) -> Result<(),Error>;
 
@@ -41,6 +46,39 @@ pub trait WorkerShared {
                 return Err(anyhow!("Visit directory path does not exist"))
             }
         }
+    }
+
+    fn make_dirs(&self, path: &Path, web_user: String) -> Result<(), Error>{
+        if path.exists() {
+            Ok(())
+        } else {
+            if let Err(e) = fs::create_dir_all(path) {
+                Err(anyhow!(e))
+            } else{
+                let setfacl_status = Command::new("/usr/bin/setfacl")
+                    .args(&["-R", "-m", &format!("u:{}:rwx", web_user), &path.to_string_lossy()])
+                    .status();
+    
+                match setfacl_status {
+                    OtherOk(status) if status.success() => {
+                        Ok(())
+                    }
+                    OtherOk(status) => {
+                        println!("setfacl failed with exit code: {}", status);
+                        Ok(())
+                    }
+                    Err(e) => {
+                        println!("Failed to execute setfacl: {}", e);
+                        Ok(())
+                    }
+                }
+            }        
+        }
+    }
+
+    fn move_dir(&self, src: &PathBuf, target: &Path){
+        let new_filename = target.join(src.file_name().unwrap());
+        let ext = src.extension();
     }
 }
 
@@ -91,7 +129,7 @@ impl ZWorker {
         Ok(containers)
     }
 
-    pub fn get_target_and_move(&self, barcode: String, date_dir: String, pool: &Pool) -> Result<(),Error>{
+    pub fn get_target_and_move(&self, barcode: String, date_dir: String, pool: &Pool, holding_dir: String) -> Result<(),Error>{
         let query_result= fetch_visit_info(&barcode, pool).context("Failed to retrieve container info from bracode")?;
 
         if let None = query_result.clone() {
@@ -106,8 +144,24 @@ impl ZWorker {
 
         let target_dir = format!("{}/{}/{}", &visit_dir, "tmp", &barcode);
 
-        println!("{:?}", target_dir);
+        self.make_dirs(Path::new(&target_dir), self.config.web_user.clone()).context("Failed to create target directory")?;
 
+        let src_dir = format!("{}/{}/{}", holding_dir, date_dir, barcode);
+        
+        let files: Vec<PathBuf> = glob(&format!("{}/*", &src_dir))
+        .context(format!("Failed to glob source directory for: {}", src_dir))?
+        .filter_map(|entry: std::result::Result<PathBuf, glob::GlobError>| {
+            match entry {
+                OtherOk(path) => Some(path),
+                Err(_) => None,
+            }
+        })
+        .collect();
+
+        for file in files {
+            self.move_dir(&file, Path::new(&target_dir));
+        }
+    
         Ok(())
 
     }
@@ -119,7 +173,7 @@ impl WorkerShared for ZWorker {
         let container_dict: HashMap<String, String> = self.get_container_dict(self.date_dirs.clone())?;
 
         for (barcode, date_dir)in container_dict {
-            let res = self.get_target_and_move(barcode,date_dir, pool);
+            let res = self.get_target_and_move(barcode,date_dir, pool, self.config.holding_dir.clone());
         }
 
         Ok(())

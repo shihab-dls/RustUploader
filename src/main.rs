@@ -4,6 +4,7 @@ mod ispyb;
 use crate::ispyb::{create_conn_pool, parse_ispyb_url, fetch_visit_info};
 use crate::fileworker::{EFWorker, ZWorker, WorkerShared};
 
+use diesel::result;
 use formulatrix_uploader::{ConfigPaths, Config, Credentials};
 use serde_json;
 use anyhow::{Context, Result, Error};
@@ -27,8 +28,8 @@ fn main() -> Result<(),Error> {
     let worker_ef: Box<dyn WorkerShared> = setup_worker(&config_paths.config_file_ef).context("Could not setup EF worker")?;
     let worker_z: Box<dyn WorkerShared> = setup_worker(&config_paths.config_file_z).context("Could not setup Z worker")?;
 
-    worker_z.process_job(&pool);
-
+    let res = worker_z.process_job(&pool);
+    
     Ok(())
 }
 

@@ -48,6 +48,7 @@ pub struct Config {
     pub upload_dir: String,
     pub holding_dir: String,
     pub task: String,
+    pub web_user: String,
     pub max_files: u32,
     #[serde(default)]
     pub max_files_in_batch: u32,
