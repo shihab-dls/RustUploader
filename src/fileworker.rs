@@ -4,24 +4,43 @@ use std::path::PathBuf;
 use formulatrix_uploader::{Config, VisitInfo};
 use std::collections::HashMap;
 use glob::glob;
-use anyhow::{Context, Result, Error};
+use anyhow::{Context, Error, Ok, Result};
 use std::ffi::OsStr;
 use mysql::*;
 use mysql::prelude::*;
 use anyhow::anyhow;
-
+use std::path::Path;
+use std::result::Result::Ok as OtherOk;
 pub trait WorkerShared {
     fn process_job(&self, pool: &Pool) -> Result<(),Error>;
 
-    fn get_visit_dir(&self, query_result: VisitInfo){
+    fn get_visit_dir(&self, query_result: VisitInfo, upload_dir: String) -> Result<String,Error>{
         let visit = query_result.visit.unwrap();
+
         let proposal = if let Some(index) = visit.find('-') {
             visit[..index].to_string()
         } else {
             visit.clone()
         };
 
-        println!("{}", proposal);
+        
+        let new_root = format!("{}/{}/{}", upload_dir, proposal, visit);
+        
+        let old_root = if let Some(year) = query_result.year {
+            format!("{}/{}/{}", upload_dir, year, visit)
+        } else{
+            String::new()
+        };
+        
+        if Path::new(&old_root).exists(){
+            return Ok(old_root)
+        } else {
+            if Path::new(&new_root).exists(){
+                return Ok(new_root)
+            } else {
+                return Err(anyhow!("Visit directory path does not exist"))
+            }
+        }
     }
 }
 
@@ -47,7 +66,7 @@ impl ZWorker {
 
             let barcode_dir: Vec<PathBuf> = barcodes.filter_map(|entry: std::result::Result<PathBuf, glob::GlobError>| {
                 match entry {
-                    Ok(path) => Some(path),
+                    OtherOk(path) => Some(path),
                     Err(_) => None,
                 }
             })
@@ -83,7 +102,11 @@ impl ZWorker {
             return Err(anyhow!(format!("No visit directory found for barcode {}", &barcode)))
         }
 
-        let visit_dir = self.get_visit_dir(query_result.clone().unwrap());
+        let visit_dir: String=  self.get_visit_dir(query_result.clone().unwrap(), self.config.upload_dir.clone()).context(format!("Could not obtain visit directory for barcode: {}", &barcode))?;
+
+        let target_dir = format!("{}/{}/{}", &visit_dir, "tmp", &barcode);
+
+        println!("{:?}", target_dir);
 
         Ok(())
 
