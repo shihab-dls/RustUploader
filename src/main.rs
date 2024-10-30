@@ -1,44 +1,35 @@
 mod fileworker;
+mod ispyb;
 
+use crate::ispyb::{create_conn_pool, parse_ispyb_url, fetch_visit_info};
 use crate::fileworker::{EFWorker, ZWorker, WorkerShared};
-use formulatrix_uploader::{ConfigPaths, Config, Credentials, ContainerInfo, Test};
-use prelude::Queryable;
+
+use formulatrix_uploader::{ConfigPaths, Config, Credentials};
 use serde_json;
 use anyhow::{Context, Result, Error};
-use std::{fmt::format, fs::File};
+use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
 use glob::glob;
 use log::{error, info};
 use serde::de::DeserializeOwned;
-use diesel::mysql::MysqlConnection;
-use diesel::prelude::*;
-use diesel::sql_query;
 use mysql::*;
 use mysql::prelude::*;
 
-fn main() {
+fn main() -> Result<(),Error> {
     dotenvy::dotenv().ok();
     let config_paths: ConfigPaths = envy::from_env::<ConfigPaths>()
-    .expect("Failed to load configuration data from .env file");
+    .context("Failed to load configuration data from .env file")?;
 
-    let worker_ef: Box<dyn WorkerShared> = setup_worker(&config_paths.config_file_ef).expect("Could not setup EF worker");
-    let worker_z: Box<dyn WorkerShared> = setup_worker(&config_paths.config_file_z).expect("Could not setup Z worker");
+    let database_url: String = parse_ispyb_url(&config_paths.credentials_path).context("Failed to parse ISPyB URL")?;
+    let pool: Pool = create_conn_pool(database_url).context("Failed to establish connection pool")?;
+    
+    let worker_ef: Box<dyn WorkerShared> = setup_worker(&config_paths.config_file_ef).context("Could not setup EF worker")?;
+    let worker_z: Box<dyn WorkerShared> = setup_worker(&config_paths.config_file_z).context("Could not setup Z worker")?;
 
-    let database_url: String = parse_ispyb_url(&config_paths.credentials_path).expect("Failed to parse ISPyB URL");
+    worker_z.process_job(&pool);
 
-    let pool = Pool::new(database_url.as_str()).expect("Failed to establish connection pool");
-
-    let mut conn = pool.get_conn().expect("Failed to establish connection to database");
-
-    let selected = conn.query_map("SELECT containerId from Container",|(containerId)| Test {containerId}).expect("Query failed.");
-
-    let selected = conn.query_map("CALL retrieve_container_for_barcode('VMXiSim-001');",|(container_id, session_id, dewar_id, name, barcode, status, container_type, capacity, location, beamline, comments, experiment_type, visit, year)| ContainerInfo {container_id, session_id, dewar_id, name, barcode, status, container_type, capacity, location, beamline, comments, experiment_type, visit, year},).expect("Query failed.");
-
-    println!("{:?}", selected);
-
-    worker_z.process_job();
-
+    Ok(())
 }
 
 fn setup_worker(config_path: &String) -> Result<Box<dyn WorkerShared>, Error> {
@@ -96,29 +87,16 @@ fn load_from_json<T: DeserializeOwned>(file_path: &String) -> Result<T> {
     Ok(parsed_content)
 }
 
-fn load_data_from_json(file_path: &String) -> Result<Config> {
+pub fn load_data_from_json(file_path: &String) -> Result<Config> {
     load_from_json(file_path)
 }
 
-fn load_creds_from_json(file_path: &String) -> Result<Credentials> {
+pub fn load_creds_from_json(file_path: &String) -> Result<Credentials> {
     load_from_json(file_path)
-}
-
-fn parse_ispyb_url(file_path: &String) -> Result<String,Error>{
-    let database_creds:Credentials = load_creds_from_json(&file_path)?;
-
-    let database_url: String = format!("mysql://{}:{}@{}:{}/{}?pool_min=1&pool_max=1", database_creds.username, database_creds.password, database_creds.host, database_creds.port, database_creds.database);
-
-    Ok(database_url)
 }
 
 fn glob_files(config: Result<Config, Error>) -> Result<(glob::Paths, Config), Error> {
     let config = config?;
     let files: glob::Paths = glob(&format!("{}/{}", &config.holding_dir, "*"))?;
     Ok((files, config))
-}
-
-pub fn establish_connection(database_url: &String) -> MysqlConnection {
-    MysqlConnection::establish(&database_url)
-        .unwrap_or_else(|_| panic!("Error connecting to {}", database_url))
 }

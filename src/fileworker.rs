@@ -1,15 +1,27 @@
+use crate::fetch_visit_info;
+
 use std::path::PathBuf;
-use formulatrix_uploader::Config;
+use formulatrix_uploader::{Config, VisitInfo};
 use std::collections::HashMap;
 use glob::glob;
-use anyhow::{Result, Error};
+use anyhow::{Context, Result, Error};
 use std::ffi::OsStr;
+use mysql::*;
+use mysql::prelude::*;
+use anyhow::anyhow;
 
 pub trait WorkerShared {
-    fn process_job(&self) -> Result<&str,Error>;
+    fn process_job(&self, pool: &Pool) -> Result<(),Error>;
 
-    fn retrieve_container_for_barcode(&self, barcode: String){
-        println!("Accessing shared trait")
+    fn get_visit_dir(&self, query_result: VisitInfo){
+        let visit = query_result.visit.unwrap();
+        let proposal = if let Some(index) = visit.find('-') {
+            visit[..index].to_string()
+        } else {
+            visit.clone()
+        };
+
+        println!("{}", proposal);
     }
 }
 
@@ -60,25 +72,34 @@ impl ZWorker {
         Ok(containers)
     }
 
-    pub fn get_target_and_move(&self, barcode: String, date: String){
-        self.retrieve_container_for_barcode(barcode);
+    pub fn get_target_and_move(&self, barcode: String, date_dir: String, pool: &Pool) -> Result<(),Error>{
+        let query_result= fetch_visit_info(&barcode, pool).context("Failed to retrieve container info from bracode")?;
+
+        if let None = query_result.clone() {
+            return Err(anyhow!(format!("No container info found for barcode {}", &barcode)))
+        }
+
+        if let None = query_result.clone().unwrap().visit {
+            return Err(anyhow!(format!("No visit directory found for barcode {}", &barcode)))
+        }
+
+        let visit_dir = self.get_visit_dir(query_result.clone().unwrap());
+
+        Ok(())
+
     }
 }
 
 impl WorkerShared for ZWorker {
-    fn process_job(&self) -> Result<&str,Error>{
+    fn process_job(&self, pool: &Pool) -> Result<(),Error>{
         println!("Processing job for Z task");
         let container_dict: HashMap<String, String> = self.get_container_dict(self.date_dirs.clone())?;
 
-        for (k, v)in container_dict {
-            self.get_target_and_move(k,v);
+        for (barcode, date_dir)in container_dict {
+            let res = self.get_target_and_move(barcode,date_dir, pool);
         }
 
-
-
-
-        let res = "test";
-        Ok(&res)
+        Ok(())
     }
 }
 
@@ -98,9 +119,8 @@ impl EFWorker {
 }
 
 impl WorkerShared for EFWorker {
-    fn process_job(&self) -> Result<&str,Error> {
+    fn process_job(&self, pool: &Pool) -> Result<(),Error> {
         println!("Processing job for EF task");
-        let res = "test";
-        Ok(&res)
+        Ok(())
     }
 }
