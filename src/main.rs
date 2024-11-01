@@ -16,6 +16,7 @@ use log::{error, info};
 use serde::de::DeserializeOwned;
 use mysql::*;
 use mysql::prelude::*;
+use std::path::Path;
 
 fn main() -> Result<(),Error> {
     dotenvy::dotenv().ok();
@@ -25,10 +26,10 @@ fn main() -> Result<(),Error> {
     let database_url: String = parse_ispyb_url(&config_paths.credentials_path).context("Failed to parse ISPyB URL")?;
     let pool: Pool = create_conn_pool(database_url).context("Failed to establish connection pool")?;
     
-    let worker_ef: Box<dyn WorkerShared> = setup_worker(&config_paths.config_file_ef).context("Could not setup EF worker")?;
-    let worker_z: Box<dyn WorkerShared> = setup_worker(&config_paths.config_file_z).context("Could not setup Z worker")?;
+    let worker_ef: Box<dyn WorkerShared> = setup_worker(&config_paths.config_file_ef).context("Could not set up EF worker")?;
+    let worker_z: Box<dyn WorkerShared> = setup_worker(&config_paths.config_file_z).context("Could not set up Z worker")?;
 
-    let res = worker_z.process_job(&pool);
+    worker_z.process_job(&pool).context("Failed to process job")?;
     
     Ok(())
 }
@@ -98,6 +99,10 @@ pub fn load_creds_from_json(file_path: &String) -> Result<Credentials> {
 
 fn glob_files(config: Result<Config, Error>) -> Result<(glob::Paths, Config), Error> {
     let config = config?;
-    let files: glob::Paths = glob(&format!("{}/{}", &config.holding_dir, "*"))?;
+    let holding_dir: PathBuf = PathBuf::from(&config.holding_dir).canonicalize().map_err(|e| {
+        Error::msg(format!("Failed to canonicalize holding directory: {}", e))
+    })?;
+    let pattern = holding_dir.join("*");
+    let files: glob::Paths = glob(pattern.to_string_lossy().as_ref())?;
     Ok((files, config))
 }

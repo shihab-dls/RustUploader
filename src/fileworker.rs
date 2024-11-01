@@ -1,4 +1,5 @@
 use crate::fetch_visit_info;
+use crate::ispyb::populate_test_data;
 
 use std::path::PathBuf;
 use formulatrix_uploader::{Config, VisitInfo};
@@ -13,37 +14,42 @@ use std::path::Path;
 use std::result::Result::Ok as OtherOk;
 use std::fs;
 use std::process::Command;
-use image::imageops;
-
+use image::{open, DynamicImage, imageops};
 
 pub trait WorkerShared {
     fn process_job(&self, pool: &Pool) -> Result<(),Error>;
 
-    fn get_visit_dir(&self, query_result: VisitInfo, upload_dir: String) -> Result<String,Error>{
+    fn get_visit_dir(&self, query_result: VisitInfo, upload_dir: String) -> Result<PathBuf,Error>{    
         let visit = query_result.visit.unwrap();
-
         let proposal = if let Some(index) = visit.find('-') {
             visit[..index].to_string()
         } else {
             visit.clone()
         };
-
-        
-        let new_root = format!("{}/{}/{}", upload_dir, proposal, visit);
-        
-        let old_root = if let Some(year) = query_result.year {
-            format!("{}/{}/{}", upload_dir, year, visit)
+    
+        let new_root: PathBuf = Path::new(&upload_dir)
+            .join(Path::new(&proposal))
+            .join(Path::new(&visit));
+                        
+        let old_root: PathBuf = if let Some(year) = query_result.year {
+            Path::new(&upload_dir)
+            .join(Path::new(&year))
+            .join(Path::new(&visit))
         } else{
-            String::new()
+            PathBuf::new()
         };
         
-        if Path::new(&old_root).exists(){
-            return Ok(old_root)
-        } else {
-            if Path::new(&new_root).exists(){
-                return Ok(new_root)
-            } else {
-                return Err(anyhow!("Visit directory path does not exist"))
+        match fs::canonicalize(old_root.clone()) {
+            OtherOk(path) => Ok(path),
+            Err(_) => {
+                match fs::canonicalize(new_root.clone()) {
+                    OtherOk(path) => Ok(path),
+                    Err(_) => Err(anyhow!(format!(
+                        "Visit directory path does not exist. Tried old root: {} and new root: {}",
+                        old_root.to_string_lossy().into_owned(),
+                        new_root.to_string_lossy().into_owned()
+                    ))),
+                }
             }
         }
     }
@@ -52,33 +58,43 @@ pub trait WorkerShared {
         if path.exists() {
             Ok(())
         } else {
-            if let Err(e) = fs::create_dir_all(path) {
-                Err(anyhow!(e))
-            } else{
-                let setfacl_status = Command::new("/usr/bin/setfacl")
-                    .args(&["-R", "-m", &format!("u:{}:rwx", web_user), &path.to_string_lossy()])
-                    .status();
-    
-                match setfacl_status {
-                    OtherOk(status) if status.success() => {
+            fs::create_dir_all(path).map_err(anyhow::Error::from)?;
+        
+            match Command::new("/usr/bin/setfacl")
+            .args(["-R", "-m", &format!("u:{}:rwx", web_user), path.to_string_lossy().as_ref()])
+            .status() {
+                OtherOk(setfacl_status) => {
+                    if setfacl_status.success() {
                         Ok(())
-                    }
-                    OtherOk(status) => {
-                        println!("setfacl failed with exit code: {}", status);
-                        Ok(())
-                    }
-                    Err(e) => {
-                        println!("Failed to execute setfacl: {}", e);
+                    } else {
+                        println!("setfacl failed with exit code: {}", setfacl_status.code().unwrap_or(-1));
                         Ok(())
                     }
                 }
-            }        
+                Err(e) => {
+                    println!("setfacl process failed with: {}", e);
+                    Ok(())
+                }
+            }
         }
     }
 
-    fn move_dir(&self, src: &PathBuf, target: &Path){
+    fn move_dir(&self, src: &Path, target: &Path) -> Result<(),Error>{
         let new_filename = target.join(src.file_name().unwrap());
-        let ext = src.extension();
+
+        let has_tiff_extension = matches!(src.extension(), Some(ext) if ext == "tiff");
+
+        if has_tiff_extension {
+            let img: DynamicImage = open(src)?;
+            let flipped_image = imageops::flip_vertical(&img);
+            flipped_image.save(&new_filename)?;
+            //fs::remove_file(src).context("Failed to delete file from source")?;
+        } else {
+            fs::copy(src, &new_filename).context("Failed to copy file")?;
+            //fs::remove_file(src).context("Failed to delete file from source")?;
+        }
+
+        Ok(())
     }
 }
 
@@ -102,13 +118,9 @@ impl ZWorker {
                 .expect("Cannot convert PathBuf to String"), "*/")
             )?;
 
-            let barcode_dir: Vec<PathBuf> = barcodes.filter_map(|entry: std::result::Result<PathBuf, glob::GlobError>| {
-                match entry {
-                    OtherOk(path) => Some(path),
-                    Err(_) => None,
-                }
-            })
-            .collect();
+            let barcode_dir: Vec<PathBuf> = barcodes
+                .filter_map(Result::ok)
+                .collect();
 
             for entry in barcode_dir{
                 containers.insert(
@@ -129,41 +141,51 @@ impl ZWorker {
         Ok(containers)
     }
 
-    pub fn get_target_and_move(&self, barcode: String, date_dir: String, pool: &Pool, holding_dir: String) -> Result<(),Error>{
-        let query_result= fetch_visit_info(&barcode, pool).context("Failed to retrieve container info from bracode")?;
-
+    pub fn get_target_and_move(&self, barcode: &String, date_dir: &String, pool: &Pool, holding_dir: String)  -> Result<Vec<Result<PathBuf, Error>>, Error> {
+        //for testing//
+        populate_test_data(barcode, pool);
+        //for testing//
+        let query_result= fetch_visit_info(barcode, pool).context("Failed to retrieve container info from bracode")?;
         if let None = query_result.clone() {
-            return Err(anyhow!(format!("No container info found for barcode {}", &barcode)))
+            return Err(anyhow!(format!("No container info found for barcode {}", barcode)))
         }
-
-        if let None = query_result.clone().unwrap().visit {
-            return Err(anyhow!(format!("No visit directory found for barcode {}", &barcode)))
-        }
-
-        let visit_dir: String=  self.get_visit_dir(query_result.clone().unwrap(), self.config.upload_dir.clone()).context(format!("Could not obtain visit directory for barcode: {}", &barcode))?;
-
-        let target_dir = format!("{}/{}/{}", &visit_dir, "tmp", &barcode);
-
-        self.make_dirs(Path::new(&target_dir), self.config.web_user.clone()).context("Failed to create target directory")?;
-
-        let src_dir = format!("{}/{}/{}", holding_dir, date_dir, barcode);
         
-        let files: Vec<PathBuf> = glob(&format!("{}/*", &src_dir))
-        .context(format!("Failed to glob source directory for: {}", src_dir))?
-        .filter_map(|entry: std::result::Result<PathBuf, glob::GlobError>| {
-            match entry {
-                OtherOk(path) => Some(path),
-                Err(_) => None,
-            }
-        })
+        if let None = query_result.clone().unwrap().visit {
+            return Err(anyhow!(format!("No visit directory found for barcode {}", barcode)))
+        }
+        
+        let visit_dir: PathBuf=  self.get_visit_dir(
+            query_result
+            .clone()
+            .unwrap(), 
+            self.config.upload_dir
+            .clone())
+            .context(format!("Could not obtain visit directory for barcode: {}", barcode))?;
+                        
+        let target_dir: PathBuf = visit_dir.join("tmp").join(barcode);
+
+        self.make_dirs(&target_dir, self.config.web_user.clone()).context("Failed to create target directory")?;
+
+        let src_dir = Path::new(&holding_dir).join(date_dir).join(barcode);
+        
+        let files: Vec<PathBuf> = glob(src_dir.join("*").to_string_lossy().as_ref())
+        .context(format!("Failed to glob source directory for barcode: {}", barcode))?
+        .filter_map(Result::ok)
         .collect();
 
-        for file in files {
-            self.move_dir(&file, Path::new(&target_dir));
-        }
+        let mut results = Vec::new();
     
-        Ok(())
-
+        for file in files {
+            let result = self.move_dir(&file, &target_dir);
+            match result {
+                OtherOk(_) => results.push(Ok(file)),
+                Err(err) => {
+                    println!("Failed to move file {:?}: {}", file, err);
+                    results.push(Err(err));
+                }
+            }
+        } 
+        Ok(results)
     }
 }
 
@@ -173,9 +195,22 @@ impl WorkerShared for ZWorker {
         let container_dict: HashMap<String, String> = self.get_container_dict(self.date_dirs.clone())?;
 
         for (barcode, date_dir)in container_dict {
-            let res = self.get_target_and_move(barcode,date_dir, pool, self.config.holding_dir.clone());
+            let result = self.get_target_and_move(&barcode,&date_dir, pool, self.config.holding_dir.clone());
+            match result {
+                OtherOk(_) => {
+                    println!("This barcode has finished processing: {}", &barcode);
+                    for file in result.unwrap() {
+                        if let Err(err) = file {
+                            println!("Failed to process file: {} ", err);
+                        }
+                    }
+                },
+                Err(err) =>{
+                    println!("Failed to process barcode: {}", &barcode);
+                    println!("{:?}", err);
+                }
+            }
         }
-
         Ok(())
     }
 }

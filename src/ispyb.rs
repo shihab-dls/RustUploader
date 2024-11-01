@@ -38,3 +38,42 @@ pub fn parse_ispyb_url(file_path: &String) -> Result<String,Error>{
 
     Ok(database_url)
 }
+
+
+pub fn populate_test_data(barcode: &String, pool: &Pool) -> Result<(), mysql::Error> {
+    let mut conn = pool.get_conn()?;
+    
+    let proposal_id = 1;
+    let person_id = 1;
+    let session_id = 2;
+    let visit_number = "2";
+    let proposal_code = "ABC";
+    let proposal_number = "123";
+    let bl_timestamp = "2023-06-20 15:45:00";
+
+    conn.exec_drop(
+        r#"
+        INSERT IGNORE INTO Proposal (proposalId, proposalCode, proposalNumber, personId)
+        VALUES (?, ?, ?, ?)
+        "#,
+        (proposal_id, proposal_code, proposal_number, person_id),
+    )?;
+
+    conn.exec_drop(
+        r#"
+        INSERT IGNORE INTO BLSession (sessionId, proposalId, visit_number)
+        VALUES (?, ?, ?)
+        "#,
+        (session_id, proposal_id, visit_number),
+    )?;
+
+    conn.exec_drop(
+        r#"
+        INSERT IGNORE INTO Container (barcode, sessionId, blTimeStamp)
+        VALUES (?, ?, ?)
+        "#,
+        (barcode, session_id, bl_timestamp),
+    )?;
+
+    Ok(())
+}

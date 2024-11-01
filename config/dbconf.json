@@ -1,0 +1,7 @@
+{
+    "database": "ispyb",
+    "username": "root",        
+    "password": "",
+    "host":	"mariadb",
+    "port": 3306
+}
