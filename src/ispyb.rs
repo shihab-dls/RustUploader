@@ -39,7 +39,7 @@ pub fn parse_ispyb_url(file_path: &String) -> Result<String,Error>{
     Ok(database_url)
 }
 
-
+//for testing//
 pub fn populate_test_data(barcode: &String, pool: &Pool) -> Result<(), mysql::Error> {
     let mut conn = pool.get_conn()?;
     
@@ -77,3 +77,4 @@ pub fn populate_test_data(barcode: &String, pool: &Pool) -> Result<(), mysql::Er
 
     Ok(())
 }
+//for testing//

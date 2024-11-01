@@ -15,6 +15,7 @@ use std::result::Result::Ok as OtherOk;
 use std::fs;
 use std::process::Command;
 use image::{open, DynamicImage, imageops};
+use rayon::prelude::*;
 
 pub trait WorkerShared {
     fn process_job(&self, pool: &Pool) -> Result<(),Error>;
@@ -143,7 +144,7 @@ impl ZWorker {
 
     pub fn get_target_and_move(&self, barcode: &String, date_dir: &String, pool: &Pool, holding_dir: String)  -> Result<Vec<Result<PathBuf, Error>>, Error> {
         //for testing//
-        populate_test_data(barcode, pool);
+        populate_test_data(barcode, pool)?;
         //for testing//
         let query_result= fetch_visit_info(barcode, pool).context("Failed to retrieve container info from bracode")?;
         if let None = query_result.clone() {
@@ -172,20 +173,19 @@ impl ZWorker {
         .context(format!("Failed to glob source directory for barcode: {}", barcode))?
         .filter_map(Result::ok)
         .collect();
-
-        let mut results = Vec::new();
     
-        for file in files {
-            let result = self.move_dir(&file, &target_dir);
-            match result {
-                OtherOk(_) => results.push(Ok(file)),
+        Ok(files
+        .par_iter()
+        .map(|file| {
+            match self.move_dir(file, &target_dir) {
+                OtherOk(_) => Ok(file.clone()),
                 Err(err) => {
                     println!("Failed to move file {:?}: {}", file, err);
-                    results.push(Err(err));
+                    Err(err)
                 }
             }
-        } 
-        Ok(results)
+        })
+        .collect())
     }
 }
 
@@ -194,23 +194,24 @@ impl WorkerShared for ZWorker {
         println!("Processing job for Z task");
         let container_dict: HashMap<String, String> = self.get_container_dict(self.date_dirs.clone())?;
 
-        for (barcode, date_dir)in container_dict {
-            let result = self.get_target_and_move(&barcode,&date_dir, pool, self.config.holding_dir.clone());
+        container_dict.par_iter().for_each(|(barcode, date_dir)| {
+            let result = self.get_target_and_move(barcode, date_dir, pool, self.config.holding_dir.clone());
             match result {
-                OtherOk(_) => {
-                    println!("This barcode has finished processing: {}", &barcode);
-                    for file in result.unwrap() {
+                OtherOk(files) => {
+                    println!("This barcode has finished processing: {}", barcode);
+                    for file in files {
                         if let Err(err) = file {
-                            println!("Failed to process file: {} ", err);
+                            println!("Failed to process file: {}", err);
                         }
                     }
                 },
-                Err(err) =>{
-                    println!("Failed to process barcode: {}", &barcode);
+                Err(err) => {
+                    println!("Failed to process barcode: {}", barcode);
                     println!("{:?}", err);
                 }
             }
-        }
+        });
+
         Ok(())
     }
 }
