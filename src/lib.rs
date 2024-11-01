@@ -86,3 +86,12 @@ pub struct XmlDatum {
     pub nss: String,
     pub container: Option<VisitInfo>
 }
+
+#[derive(Debug)]
+pub struct InspectionInfo {
+    pub container_type: Option<String>,
+    pub container_id: Option<u32>,
+    pub session_id: Option<u32>,
+    pub visit: Option<String>,
+    pub year: Option<String>,
+}

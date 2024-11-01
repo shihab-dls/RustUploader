@@ -1,26 +1,22 @@
-use crate::fetch_visit_info;
-use crate::ispyb::populate_test_data;
+use crate::ispyb::{
+    populate_test_data, fetch_inspection_info, fetch_visit_info, populate_test_data_for_inspection
+};
 
 use std::{collections::HashSet, path::PathBuf};
 use formulatrix_uploader::{Config, VisitInfo, XmlDatum};
 use std::collections::HashMap;
 use glob::glob;
 use anyhow::{Context, Error, Ok, Result};
-use std::ffi::OsStr;
 use mysql::*;
-use mysql::prelude::*;
 use anyhow::anyhow;
 use std::path::Path;
 use std::result::Result::Ok as OtherOk;
 use std::fs;
-use std::io;
 use std::io::prelude::*;
 use std::process::Command;
 use image::{open, DynamicImage, imageops};
 use rayon::prelude::*;
-use xml::reader::{EventReader, XmlEvent};
-use regex::Regex;
-use elementtree::{self, Element, QName};
+use elementtree::{self, Element};
 
 pub trait WorkerShared {
     fn process_job(&self, pool: &Pool) -> Result<(),Error>;
@@ -231,8 +227,15 @@ impl EFWorker {
         Self { config, files }
     }
     
-    pub fn handle_ef(&self){
+    pub fn handle_ef(&self, xml_datum: &XmlDatum, pool: &Pool) -> Result<(), Error>{
         println!("Handling EF files");
+        //for testing//
+        populate_test_data_for_inspection(&xml_datum.inspection_id, pool)?;
+        //for testing//
+        let container: std::result::Result<Option<formulatrix_uploader::InspectionInfo>, mysql::Error> = fetch_inspection_info(&xml_datum.inspection_id, pool);
+        println!("{:?}", container);
+
+        Ok(())
     }
 
     pub fn check_pairs_collect_xml(&self) -> Vec<&PathBuf> {
@@ -302,7 +305,7 @@ impl WorkerShared for EFWorker {
         })
         .collect();
 
-        println!("{:?}", xml_data);
+        let res = self.handle_ef(&xml_data[1    ], pool);
 
         Ok(())
     }
