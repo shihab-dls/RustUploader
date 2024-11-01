@@ -1,5 +1,7 @@
+use elementtree::Element;
 use serde::Deserialize;
 use diesel::QueryableByName;
+use std::path::{Path, PathBuf};
 
 /// The paths to cofiguration files
 #[derive(Deserialize, Debug)]
@@ -74,4 +76,13 @@ pub struct Credentials {
 pub struct VisitInfo {
     pub visit: Option<String>,
     pub year: Option<String>,
+}
+
+#[derive(Debug)]
+pub struct XmlDatum {
+    pub xml: String,
+    pub inspection_id: String,
+    pub root: Element,
+    pub nss: String,
+    pub container: Option<VisitInfo>
 }

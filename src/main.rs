@@ -29,7 +29,8 @@ fn main() -> Result<(),Error> {
     let worker_ef: Box<dyn WorkerShared> = setup_worker(&config_paths.config_file_ef).context("Could not set up EF worker")?;
     let worker_z: Box<dyn WorkerShared> = setup_worker(&config_paths.config_file_z).context("Could not set up Z worker")?;
 
-    worker_z.process_job(&pool).context("Failed to process job")?;
+    //worker_z.process_job(&pool).context("Failed to process job")?;
+    worker_ef.process_job(&pool).context("Failed to process job")?;
     
     Ok(())
 }

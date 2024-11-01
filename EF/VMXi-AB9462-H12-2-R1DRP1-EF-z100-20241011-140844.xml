@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ImageInfo xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://www.oppf.ox.ac.uk/xsd/RI/ImageInfo.xsd">
+  <Url>VMXi-AB9462/VMXi-AB9462-H12-2-R1DRP1-EF-z100-20241011-140844.jpg</Url>
+  <Imager>RI1000-0230</Imager>
+  <ImagingId>150937-20241011-140844</ImagingId>
+  <PlateId>VMXi-AB9462</PlateId>
+  <Drop>H12.2</Drop>
+  <ImageType>C</ImageType>
+  <ImagedAt>2024-10-11T13:21:16.8282699Z</ImagedAt>
+  <Zoom>0</Zoom>
+  <SizeInPixels>
+    <Height>2704</Height>
+    <Width>3376</Width>
+  </SizeInPixels>
+  <SizeInMicrons>
+    <Height>1559.935</Height>
+    <Width>1947.6111538461539</Width>
+  </SizeInMicrons>
+  <Z>100.00000000000006</Z>
+</ImageInfo>

@@ -1,8 +1,8 @@
 use crate::fetch_visit_info;
 use crate::ispyb::populate_test_data;
 
-use std::path::PathBuf;
-use formulatrix_uploader::{Config, VisitInfo};
+use std::{collections::HashSet, path::PathBuf};
+use formulatrix_uploader::{Config, VisitInfo, XmlDatum};
 use std::collections::HashMap;
 use glob::glob;
 use anyhow::{Context, Error, Ok, Result};
@@ -13,9 +13,14 @@ use anyhow::anyhow;
 use std::path::Path;
 use std::result::Result::Ok as OtherOk;
 use std::fs;
+use std::io;
+use std::io::prelude::*;
 use std::process::Command;
 use image::{open, DynamicImage, imageops};
 use rayon::prelude::*;
+use xml::reader::{EventReader, XmlEvent};
+use regex::Regex;
+use elementtree::{self, Element, QName};
 
 pub trait WorkerShared {
     fn process_job(&self, pool: &Pool) -> Result<(),Error>;
@@ -225,15 +230,80 @@ impl EFWorker {
     pub fn new(config: Config, files: Vec<PathBuf>) -> Self {
         Self { config, files }
     }
-
+    
     pub fn handle_ef(&self){
         println!("Handling EF files");
     }
+
+    pub fn check_pairs_collect_xml(&self) -> Vec<&PathBuf> {
+        let jpg_file_stems: HashSet<String> = self.files.iter()
+        .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("jpg"))
+        .filter_map(|path| path.file_stem().and_then(|stem| stem.to_str()).map(|s| s.to_string()))
+        .collect();
+
+        let xml_files: Vec<&PathBuf> = self.files.iter()
+        .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("xml"))
+        .collect();
+
+        xml_files
+        .into_iter()
+        .filter(|path| {
+            let should_include = path.file_stem()
+                .and_then(|stem| stem.to_str())
+                .map(|s| jpg_file_stems.contains(s))
+                .unwrap_or(false);
+
+            if !should_include {
+                println!("XML file has no corresponding JPEG: {:?}", path);
+            }
+            should_include
+        })
+        .collect()
+    }
+
+    pub fn get_inspection_id(&self, xml_file: &Path) -> Result<(String, String, Element), Error>{
+        let path = xml_file;
+        let mut file = fs::File::open(path)?;
+        let mut contents = String::new();
+        file.read_to_string(&mut contents)?;
+        let root = Element::from_reader(contents.as_bytes())?;
+        let ns = root.tag().ns().context("No namespace found")?;
+        let nss = format!("{{{}}}ImagingId", ns);
+        let imaging_id = root.find(nss.as_str()).map(|f| f.text()).context("Imaging ID not found in XML")?;
+        let inspection_id = imaging_id.split("-").next().map(|sub| sub.to_string()).context("Failed to parse inspection ID from imaging ID")?;
+        Ok((inspection_id, nss, root))
+    }
+
 }
 
 impl WorkerShared for EFWorker {
     fn process_job(&self, pool: &Pool) -> Result<(),Error> {
-        println!("Processing job for EF task");
+        println!("Processing job for Z task");
+
+        let xml_files: Vec<&PathBuf> = self.check_pairs_collect_xml();
+
+        let mut xml_data: Vec<XmlDatum> = xml_files.into_iter()
+        .filter_map(|xml_file| {
+            match self.get_inspection_id(xml_file) {
+                OtherOk((inspection_id, nss, root)) => {
+                    let mut xml_datum = XmlDatum{
+                        xml: xml_file.to_string_lossy().into_owned(), 
+                        inspection_id, 
+                        root, 
+                        nss, 
+                        container: None};
+                    Some(xml_datum)
+                }
+                Err(e) => {
+                    println!("{:?}", e);
+                    None
+                }
+            }
+        })
+        .collect();
+
+        println!("{:?}", xml_data);
+
         Ok(())
     }
 }
